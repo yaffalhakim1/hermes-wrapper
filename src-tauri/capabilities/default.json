@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "Capabilities for the Hermes Wrapper main window",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}
