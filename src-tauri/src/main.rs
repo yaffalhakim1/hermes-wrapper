@@ -36,14 +36,18 @@ struct Backend {
 fn spawn_backend() -> Option<Child> {
     // Resolve the hermes binary from the known install location; fall back to
     // a bare `hermes` on PATH if the install path is missing.
-    let home = std::env::var("HERMES_HOME")
-        .unwrap_or_else(|_| "C:\\Users\\yafit\\AppData\\Local\\hermes".to_string());
+    let home = std::env::var("HERMES_HOME").unwrap_or_else(|_| {
+        format!(
+            "{}\\AppData\\Local\\hermes",
+            std::env::var("USERPROFILE").unwrap_or_default()
+        )
+    });
     let exe = format!("{home}\\bin\\hermes.exe");
 
-    let (program, explicit): (String, bool) = if std::path::Path::new(&exe).exists() {
-        (exe, true)
+    let program: String = if std::path::Path::new(&exe).exists() {
+        exe
     } else {
-        ("hermes".into(), false)
+        "hermes".into()
     };
 
     let mut cmd = Command::new(program);
@@ -55,9 +59,6 @@ fn spawn_backend() -> Option<Child> {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .stdin(Stdio::null());
-    if !explicit {
-        cmd.arg("--"); // no-op separator; harmless for PATH form
-    }
 
     match cmd.spawn() {
         Ok(child) => {
@@ -207,7 +208,14 @@ fn main() {
                     if let Some(state) = app.try_state::<Backend>() {
                         if let Ok(mut guard) = state.child.lock() {
                             if let Some(mut child) = guard.take() {
-                                let _ = child.kill();
+                                // ponytail: taskkill /T kills the whole tree —
+                                // child.kill() alone leaves grandchildren alive on port 9119
+                                let pid = child.id().to_string();
+                                let _ = Command::new("taskkill")
+                                    .args(["/PID", &pid, "/T", "/F"])
+                                    .stdout(Stdio::null())
+                                    .stderr(Stdio::null())
+                                    .status();
                                 let _ = child.wait();
                                 println!("Hermes backend killed on exit.");
                             }

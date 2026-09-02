@@ -36,7 +36,7 @@ The dashboard appears in the window. Closing the window moves the app to the tra
 
 ## Known issues
 
-- **Backend cleanup on exit is not reliable.** After quitting, an orphaned `hermes.exe` can keep port 9119 occupied. Kill it manually, or restart, to free the port. (Fix pending.)
+- None currently. (Backend cleanup on exit now kills the whole `hermes.exe` process tree via `taskkill /T`.)
 
 ## Scope
 
