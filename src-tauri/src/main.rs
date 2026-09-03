@@ -1,3 +1,6 @@
+// Hide the console window in release builds; keep it for dev builds.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 // Hermes Wrapper — a lightweight Tauri v2 (WebView2) wrapper around the
 // official Hermes Agent web dashboard (English UI).
 //
@@ -10,6 +13,7 @@
 //   5. Gracefully handle a busy port / not-yet-ready backend.
 
 use std::net::{TcpListener, TcpStream};
+use std::os::windows::process::CommandExt;
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::thread;
@@ -50,19 +54,33 @@ fn spawn_backend() -> Option<Child> {
         "hermes".into()
     };
 
-    let mut cmd = Command::new(program);
-    cmd.arg("dashboard")
-        .arg("--port")
-        .arg(HERMES_PORT.to_string())
-        .arg("--skip-build")
-        .arg("--no-open")
+    // Launch via PowerShell `Start-Process -WindowStyle Hidden` so the ENTIRE
+    // process tree (hermes.exe + its python Core child) runs with NO visible
+    // console window. CREATE_NO_WINDOW alone still allocates a headless console
+    // for console-subsystem children; Start-Process Hidden is the reliable fix.
+    let args = format!(
+        "dashboard --port {} --skip-build --no-open",
+        HERMES_PORT
+    );
+    let ps = format!(
+        "Start-Process -FilePath '{}' -ArgumentList '{}' -WindowStyle Hidden",
+        program.replace('\\', "\\\\"),
+        args
+    );
+    let mut cmd = Command::new("powershell");
+    cmd.arg("-NoProfile")
+        .arg("-Command")
+        .arg(ps)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .stdin(Stdio::null());
+        .stdin(Stdio::null())
+        // CREATE_NO_WINDOW: hermes.exe is a console process; without this
+        // flag Windows allocates a visible terminal for it even with NUL stdio.
+        .creation_flags(0x0800_0000);
 
     match cmd.spawn() {
         Ok(child) => {
-            println!("Hermes backend spawned (pid {}).", child.id());
+            println!("Hermes backend launched hidden (powershell pid {}).", child.id());
             Some(child)
         }
         Err(e) => {
@@ -215,6 +233,7 @@ fn main() {
                                     .args(["/PID", &pid, "/T", "/F"])
                                     .stdout(Stdio::null())
                                     .stderr(Stdio::null())
+                                    .creation_flags(0x0800_0000)
                                     .status();
                                 let _ = child.wait();
                                 println!("Hermes backend killed on exit.");
